@@ -1,0 +1,3 @@
+[submodule "vendor/dsh-connect-workbuddy"]
+	path = vendor/dsh-connect-workbuddy
+	url = https://github.com/dingminhua/dsh-connect-workbuddy.git
