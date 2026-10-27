@@ -3,8 +3,93 @@ import { realpathSync, existsSync } from "node:fs";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import path from "node:path";
 
+/** WorkBuddy / CodeBuddy 所有官方服务域名，必须绕过本地代理直连 */
+export const WORKBUDDY_DIRECT_DOMAINS = [
+  "workbuddy.ai",
+  "*.workbuddy.ai",
+  "codebuddy.ai",
+  "*.codebuddy.ai",
+  "codebuddy.cn",
+  "*.codebuddy.cn",
+  "workbuddy.cn",
+  "*.workbuddy.cn",
+  "copilot.tencent.com",
+  "*.tencent.com",
+];
+
+/**
+ * 确保所有 WorkBuddy 相关域名免代理直连，防止被本地海外代理节点连接重置或超时
+ */
+export function ensureWorkBuddyNoProxy(): void {
+  const current = process.env.NO_PROXY || process.env.no_proxy || "";
+  const missing = WORKBUDDY_DIRECT_DOMAINS.filter((d) => !current.includes(d));
+  if (missing.length > 0) {
+    const updated = current ? `${current},${missing.join(",")}` : missing.join(",");
+    process.env.NO_PROXY = updated;
+    process.env.no_proxy = updated;
+  }
+}
+
+// 模块加载第一时间应用 NO_PROXY 保护
+ensureWorkBuddyNoProxy();
+
+let cachedDirectFetch: typeof fetch | undefined;
+
+/**
+ * 获取专属直连 fetch 实现（绕过宿主 EnvHttpProxyAgent 代理污染）
+ */
+export async function getDirectFetch(): Promise<typeof fetch> {
+  if (cachedDirectFetch) return cachedDirectFetch;
+  ensureWorkBuddyNoProxy();
+
+  try {
+    const execDir = path.dirname(process.execPath);
+    const candidateRoots = [process.cwd(), execDir, path.resolve(execDir, ".."), path.resolve(execDir, "../lib")];
+
+    let undiciMod: any;
+    try {
+      undiciMod = await import("undici");
+    } catch {
+      for (const root of candidateRoots) {
+        let curr: string | null = root;
+        while (curr && curr !== path.dirname(curr)) {
+          const locs = [
+            path.join(curr, "node_modules", "undici", "index.js"),
+            path.join(curr, "node_modules", "@earendil-works", "pi-coding-agent", "node_modules", "undici", "index.js"),
+          ];
+          for (const loc of locs) {
+            if (existsSync(loc)) {
+              undiciMod = await import(pathToFileURL(loc).href);
+              break;
+            }
+          }
+          if (undiciMod) break;
+          curr = path.dirname(curr);
+        }
+        if (undiciMod) break;
+      }
+    }
+
+    const undici = undiciMod?.default || undiciMod;
+    if (undici?.Agent && typeof undici.fetch === "function") {
+      const directAgent = new undici.Agent({
+        connect: { timeout: 15_000 },
+        keepAliveTimeout: 30_000,
+      });
+      cachedDirectFetch = ((url: any, init?: any) => {
+        return undici.fetch(url, { ...init, dispatcher: directAgent });
+      }) as typeof fetch;
+      return cachedDirectFetch;
+    }
+  } catch {}
+
+  cachedDirectFetch = globalThis.fetch;
+  return cachedDirectFetch;
+}
+
 /**
  * 跨平台动态定位并创建 Jiti 实例
+
  * 兼容 Windows（任意盘符如 F:、C:）、macOS、Linux，杜绝任何本机绝对路径硬编码
  */
 export async function getJiti(callerUrl: string): Promise<any> {

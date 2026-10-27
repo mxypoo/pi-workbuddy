@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { exec } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { getJiti } from "./loader.ts";
+import { getJiti, getDirectFetch, ensureWorkBuddyNoProxy } from "./loader.ts";
+
+ensureWorkBuddyNoProxy();
 
 const jiti = await getJiti(import.meta.url);
 
@@ -105,6 +107,7 @@ export async function getCredentialFor(region: "cn" | "global"): Promise<any | u
 
 /**
  * 执行网页/扫码授权流程
+ * 使用直连 Fetch 杜绝本地代理环境下的网络重置/超时
  */
 export async function startOAuthLoginFlow(
   region: "cn" | "global",
@@ -112,9 +115,12 @@ export async function startOAuthLoginFlow(
     onAuth?: (info: { url: string; instructions?: string }) => void;
     onProgress?: (msg: string) => void;
     signal?: AbortSignal;
-  }
+  },
+  store?: any
 ): Promise<any> {
-  const startResult = await oauthStart(region);
+  const directFetch = await getDirectFetch();
+
+  const startResult = await oauthStart(region, { fetchImpl: directFetch });
   if ("error" in startResult) {
     throw new Error(`启动 WorkBuddy 登录失败: ${startResult.error}`);
   }
@@ -131,13 +137,20 @@ export async function startOAuthLoginFlow(
 
   const startTime = Date.now();
   const timeoutMs = (expiresIn || 600) * 1000;
+  let pollRound = 0;
 
   while (Date.now() - startTime < timeoutMs) {
     if (callbacks?.signal?.aborted) {
       throw new Error("用户取消了授权");
     }
 
-    const pollResult = await oauthPoll(loginId, region);
+    pollRound++;
+    if (callbacks?.onProgress) {
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      callbacks.onProgress(`正在等待浏览器登录... (已等待 ${elapsed}s)`);
+    }
+
+    const pollResult = await oauthPoll(loginId, region, { fetchImpl: directFetch });
 
     if (pollResult.done) {
       if ("error" in pollResult) {
@@ -145,9 +158,38 @@ export async function startOAuthLoginFlow(
       }
       if ("account" in pollResult) {
         const account = pollResult.account;
+
+        // 1. 保存到自定义凭据文件
         const allAuth = readAuthFile();
         allAuth[region] = account;
         saveAuthFile(allAuth);
+
+        // 2. 关键：同步写入上游统一凭据库 (store)，让当前运行时的 Shim 与 Upstream 立刻生效！
+        if (store && typeof store.addOAuthAccount === "function") {
+          try {
+            await store.addOAuthAccount(account);
+          } catch (e) {
+            console.error("[pi-workbuddy] store.addOAuthAccount warning:", e);
+          }
+        }
+
+        // 3. 同步写入 Pi 原生 auth.json 供原生工具感知
+        try {
+          const providerKey = region === "cn" ? "workbuddy" : "workbuddy-global";
+          const piAuth = existsSync(PI_AUTH_FILE) ? JSON.parse(readFileSync(PI_AUTH_FILE, "utf8")) : {};
+          piAuth[providerKey] = {
+            type: "oauth",
+            access: account.accessToken,
+            refresh: account.refreshToken,
+            expires: account.expiresAtMs || Date.now() + 30 * 86400 * 1000,
+            uid: account.uid,
+            domain: account.domain,
+            nickname: account.nickname,
+          };
+          mkdirSync(join(homedir(), ".pi", "agent"), { recursive: true });
+          writeFileSync(PI_AUTH_FILE, JSON.stringify(piAuth, null, 2), { mode: 0o600 });
+        } catch {}
+
         return account;
       }
     }

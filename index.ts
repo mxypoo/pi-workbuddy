@@ -3,7 +3,10 @@ import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { getJiti } from "./loader.ts";
+import { getJiti, ensureWorkBuddyNoProxy } from "./loader.ts";
+
+// 启动时确保 WorkBuddy 官方域名免代理直连，防止被本地海外代理节点连接重置或超时
+ensureWorkBuddyNoProxy();
 
 const jiti = await getJiti(import.meta.url);
 
@@ -41,12 +44,14 @@ export default async function (pi: ExtensionAPI) {
   const shims = new Map<string, any>();
   const catalogs = new Map<string, any>();
   const clients = new Map<string, any>();
+  const stores = new Map<string, any>();
 
   for (const { id: providerId, region, displayName } of REGIONS) {
     const store = new WorkBuddyCredentialStore({ region });
     const client = new WorkBuddyUpstreamClient();
     const catalog = new WorkBuddyCatalog(region);
 
+    stores.set(providerId, store);
     clients.set(providerId, client);
     catalogs.set(providerId, catalog);
 
@@ -114,7 +119,7 @@ export default async function (pi: ExtensionAPI) {
       oauth: {
         name: `${displayName} (网页/扫码授权)`,
         login: async (callbacks) => {
-          const cred = await startOAuthLoginFlow(region, callbacks);
+          const cred = await startOAuthLoginFlow(region, callbacks, store);
           // 登录成功后刷新模型目录
           try {
             const rawModels = await client.fetchModels(cred);
@@ -161,19 +166,82 @@ export default async function (pi: ExtensionAPI) {
   // 6. 命令：/workbuddy-login 登录
   pi.registerCommand("workbuddy-login", {
     description: "登录 WorkBuddy (默认国内版，可选参数 global 指定国际版)",
+    getArgumentCompletions: (prefix) => {
+      const options = [
+        { value: "global", label: "global", description: "WorkBuddy AI (国际版)" },
+        { value: "cn", label: "cn", description: "WorkBuddy (国内版)" },
+      ];
+      return options.filter((o) => o.value.startsWith(prefix.trim().toLowerCase()));
+    },
     handler: async (args, ctx) => {
-      const isGlobal = args?.trim() === "global";
-      const region = isGlobal ? "global" : "cn";
+      // 1. 立即清空输入框，消除用户按回车假死无响应感
+      try {
+        ctx.ui.setEditorText("");
+      } catch {}
+
+      const raw = args?.trim().toLowerCase() || "";
+      let region: "cn" | "global";
+
+      if (raw === "global" || raw === "intl" || raw === "ai") {
+        region = "global";
+      } else if (raw === "cn") {
+        region = "cn";
+      } else if (raw === "") {
+        // 未传参数时，如果处于交互模式则弹窗供用户选择；否则默认国内版
+        if (ctx.hasUI && typeof ctx.ui.select === "function") {
+          const choice = await ctx.ui.select("请选择要登录的 WorkBuddy 版本：", [
+            "WorkBuddy AI (国际版 - workbuddy.ai / 谷歌、GitHub或邮箱)",
+            "WorkBuddy (国内版 - codebuddy.cn / 企业微信或扫码)",
+            "取消",
+          ]);
+          if (!choice || choice === "取消") return;
+          region = choice.includes("国际版") ? "global" : "cn";
+        } else {
+          region = "cn";
+        }
+      } else {
+        ctx.ui.notify(`未知的区域参数 "${args}"，可用选项: global, cn`, "warning");
+        return;
+      }
+
+      const isGlobal = region === "global";
       const providerId = isGlobal ? "workbuddy-global" : "workbuddy";
       const regionName = isGlobal ? "WorkBuddy AI (国际版)" : "WorkBuddy (国内版)";
+      const store = stores.get(providerId);
 
-      ctx.ui.notify(`正在启动 ${regionName} 浏览器授权流程...`, "info");
+      // 2. 状态栏启动旋转等待指示器
       try {
-        const cred = await startOAuthLoginFlow(region, {
-          onAuth: ({ url, instructions }) => {
-            ctx.ui.notify(`${instructions}\n授权网址: ${url}`, "info");
+        ctx.ui.setWorkingMessage(`⏳ 正在启动 ${regionName} 授权流程...`);
+        ctx.ui.setWorkingVisible(true);
+      } catch {}
+
+      const abortController = new AbortController();
+
+      try {
+        const cred = await startOAuthLoginFlow(
+          region,
+          {
+            signal: abortController.signal,
+            onAuth: ({ url, instructions }) => {
+              try {
+                ctx.ui.setWorkingMessage(`⏳ 请在打开的浏览器中完成登录 (按 Esc 取消)`);
+              } catch {}
+              ctx.ui.notify(
+                `🌐 【${regionName} 网页授权已开启】\n` +
+                `已尝试在默认浏览器中打开登录页面。如未自动弹出，请手动复制以下网址打开：\n` +
+                `👉 ${url}\n` +
+                `💡 提示: 亦可在会话中直接使用原生命令: /login ${providerId}`,
+                "info"
+              );
+            },
+            onProgress: (msg) => {
+              try {
+                ctx.ui.setWorkingMessage(`⏳ ${msg}`);
+              } catch {}
+            },
           },
-        });
+          store
+        );
 
         const client = clients.get(providerId);
         const catalog = catalogs.get(providerId);
@@ -181,13 +249,19 @@ export default async function (pi: ExtensionAPI) {
           try {
             const rawModels = await client.fetchModels(cred);
             catalog.setLive(rawModels);
-            ctx.ui.notify(`✅ 登录成功！用户: ${cred.nickname || cred.uid}，已激活 ${rawModels.length} 个模型`, "info");
+            ctx.ui.notify(`🎉 登录成功！用户: ${cred.nickname || cred.uid}，已激活 ${rawModels.length} 个模型`, "info");
           } catch (e: any) {
             ctx.ui.notify(`✅ 登录成功，模型刷新警告: ${e.message}`, "warning");
           }
+        } else {
+          ctx.ui.notify(`🎉 登录成功！用户: ${cred.nickname || cred.uid}`, "info");
         }
       } catch (err: any) {
         ctx.ui.notify(`❌ 登录失败: ${err.message}`, "error");
+      } finally {
+        try {
+          ctx.ui.setWorkingVisible(false);
+        } catch {}
       }
     },
   });
