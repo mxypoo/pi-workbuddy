@@ -3,11 +3,9 @@ import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-// 使用 Pi 内置 jiti 加载 vendor 源码
-const { createJiti } = await import(
-  "/Users/mxypoo/.nvm/versions/node/v22.22.0/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/jiti/lib/jiti.mjs"
-);
-const jiti = createJiti(import.meta.url);
+import { getJiti } from "./loader.ts";
+
+const jiti = await getJiti(import.meta.url);
 
 const shimMod = await jiti.import("./vendor/dsh-connect-workbuddy/src/shim.ts");
 const authMod = await jiti.import("./vendor/dsh-connect-workbuddy/src/auth.ts");

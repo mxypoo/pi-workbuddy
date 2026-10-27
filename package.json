@@ -28,6 +28,9 @@
     "url": "https://github.com/mxypoo/pi-workbuddy/issues"
   },
   "homepage": "https://github.com/mxypoo/pi-workbuddy#readme",
+  "dependencies": {
+    "jiti": "^2.7.0"
+  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=1.0.0"
   }

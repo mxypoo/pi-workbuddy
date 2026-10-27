@@ -4,11 +4,9 @@ import { join } from "node:path";
 import { exec } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-// 使用 Pi 内置的 jiti 加载 TS 模块（完美支持 TS 专有构造函数属性）
-const { createJiti } = await import(
-  "/Users/mxypoo/.nvm/versions/node/v22.22.0/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/jiti/lib/jiti.mjs"
-);
-const jiti = createJiti(import.meta.url);
+import { getJiti } from "./loader.ts";
+
+const jiti = await getJiti(import.meta.url);
 
 const vendorAuth = await jiti.import("./vendor/dsh-connect-workbuddy/src/auth.ts");
 const vendorOAuth = await jiti.import("./vendor/dsh-connect-workbuddy/src/oauth.ts");
