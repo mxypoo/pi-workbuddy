@@ -1,6 +1,6 @@
 {
   "name": "pi-workbuddy",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Bridge local WorkBuddy & WorkBuddy Global models into Pi coding agent with zero-config desktop credential detection, browser OAuth, and live protocol translation.",
   "type": "module",
   "main": "index.ts",
