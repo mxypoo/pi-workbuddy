@@ -4,7 +4,25 @@
 
 ---
 
-## [1.0.1] - 2026-10-27
+## [1.1.0] - 2026-10-28
+
+### 性能 (Performance)
+- **启动零阻塞（重大优化）**：将 vendor 模块加载从模块顶层 `await` 改为惰性按需加载，Pi 启动不再为每次会话平白付出 1~1.5 秒的 jiti 现场编译开销。
+  - 原因：`vendor/dsh-connect-workbuddy/src/` 下有 187 个 TypeScript 文件，原先在扩展模块顶层用 `await jiti.import()` 一次性编译，且无缓存。
+  - 方案：新增 `fallback-models.ts`（纯数据、零依赖）承载启动期静态名册；vendor 的 jiti 编译、shim 启动、凭据读取、网络拉取全部推迟到首次真正使用该 provider 时。
+  - 实测：单独加载本插件从 **1.5s 降至 0.25s**。
+- **消除启动期串行网络阻塞**：原先启动时对两个 region 依次执行 `store.readAll()` + `client.fetchModels()`（实测合计约 1.4 秒，且完全串行），现在该路径不再出现在启动流程中。
+- **`refreshModels` 改为惰性挂载点**：Pi 只在用户打开模型选择器时才调用它，因此用它承载「首次使用时初始化」，启动零开销且选择器内依然能看到最新名册。
+
+### 修复 (Fixed)
+- **修复 `catalog.setLive` 不存在导致的静默失效**：vendor 的 `WorkBuddyCatalog` 只暴露 `set()`，原代码 4 处调用 `catalog.setLive(...)` 必然抛 `TypeError`，而异常被空 `catch` 吞掉，导致启动时那 1.4 秒网络拉取到的模型名册**全部被丢弃**，provider 永远停留在静态兜底列表。现统一改为 `catalog.set()`。
+- **修复初始化失败后无法重试**：`ensureLoaded()` 的 rejected Promise 原先会被永久缓存，失败一次后该 provider 再也无法初始化。现在失败时清空句柄，允许后续重试。
+
+### 变更 (Changed)
+- 静态兜底名册抽离至独立文件 `fallback-models.ts`，与 `vendor/.../catalog.ts` 的 `FALLBACK_WORKBUDDY_MODELS` / `FALLBACK_WORKBUDDY_MODELS_GLOBAL` 保持数据一致，避免两处维护漂移。
+- 国内版 / 国际版名册严格分离，国际版的 `auto` 路由（`default-model`）继续缺席。
+
+---
 
 ### 修复 (Fixed)
 - **解决国际版登录假死与超时挂起问题**：针对终端配置本地 HTTP/SOCKS 代理（如 `127.0.0.1:7890`）的场景，修复了 `workbuddy.ai` 国际域名被代理错误路由至海外节点导致腾讯云 WAF 重置连接（`Connection reset by peer`）或 10 秒超时挂起的问题。
