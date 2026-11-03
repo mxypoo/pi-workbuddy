@@ -12,6 +12,14 @@ ensureWorkBuddyNoProxy();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const VENDOR_DIR = path.join(__dirname, "vendor/dsh-connect-workbuddy");
 
+/**
+ * 后台名册刷新的超时上限。
+ *
+ * 直接决定「链路劣化时启动最多被拖多久」：正常响应 100~700ms，
+ * 1.2s 已覆盖近 2 倍余量；超时不影响可用性（名册退回已校准的静态兜底）。
+ */
+const CATALOG_FETCH_TIMEOUT_MS = 1_200;
+
 interface RegionDef {
   id: string;
   region: "cn" | "global";
@@ -79,6 +87,8 @@ interface RegionRuntime {
   client?: any;
   /** 幂等的惰性初始化句柄 */
   initialized?: Promise<void>;
+  /** 后台名册刷新的单飞句柄 */
+  refreshing?: Promise<void>;
 }
 
 export default async function (pi: ExtensionAPI) {
@@ -210,17 +220,16 @@ export default async function (pi: ExtensionAPI) {
       },
       // Pi 不在启动时调用 refreshModels，只在用户打开模型选择器时调用。
       // 因此这里既是「选择器能看到最新名册」的挂载点，也是天然的惰性触发点。
+      // 只等本地 shim（jiti 编译 + 回环 server），网络名册刷新丢后台，不阻塞启动。
       refreshModels: async () => {
         await ensureLoaded(providerId);
+        void refreshCatalog(providerId);
         return mapToPiModels(providerId, rt.shim.baseUrl(), rt.catalog.current()) as any;
       },
     });
   };
 
-  /**
-   * 惰性初始化：首次真正使用该 provider 时才加载 vendor、起 shim、读凭据、拉名册。
-   * 幂等且并发安全（共享同一个 Promise）。
-   */
+  /** 惰性初始化：起 shim、建 client/catalog，**零网络**。幂等且并发安全。 */
   const ensureLoaded = (providerId: string): Promise<void> => {
     const rt = runtimes.get(providerId)!;
     if (rt.initialized) return rt.initialized;
@@ -239,18 +248,7 @@ export default async function (pi: ExtensionAPI) {
       await shim.ready;
       rt.shim = shim;
 
-      // 2. 拉取最新模型名册（失败则保留静态兜底）
-      try {
-        const accounts = await store.readAll();
-        if (accounts.length > 0) {
-          const rawModels = await client.fetchModels(accounts[0]);
-          catalog.set(rawModels);
-        }
-      } catch {
-        // 离线或未登录时静默使用静态兜底名册
-      }
-
-      // 3. 用真实 shim 地址与真实名册重注册（registerProvider 支持运行时重注册并合并）
+      // 2. 用真实 shim 地址重新注册（名册刷新见 refreshCatalog，不在这里）
       registerProvider(rt);
     })().catch((err) => {
       // 初始化失败必须清空句柄，否则后续重试会永远拿到同一个 rejected Promise
@@ -259,6 +257,42 @@ export default async function (pi: ExtensionAPI) {
     });
 
     return rt.initialized;
+  };
+
+  /**
+   * 后台刷新模型名册（带短超时），**绝不阻塞启动**。
+   *
+   * 背景（2026-11-03 实测）：pi 启动期会为每个已注册 provider 调一次
+   * `refreshModels`，而这个回调里原本就藏着一个真实的跨境网络请求。
+   * 一旦链路劣化（或本地代理把 CONNECT 吃掉），启动就会被拖住 0.3~1.5 秒；
+   * 而名册只是「给选择器看的目录」，晚一拍零功能性代价：
+   * fallback-models.ts 里的静态名册（已按上游实测校准）足以正常选模型、发请求。
+   *
+   * 单飞：同一 region 的并发触发共享同一个 Promise。
+   */
+  const refreshCatalog = (providerId: string): Promise<void> => {
+    const rt = runtimes.get(providerId)!;
+    if (rt.refreshing) return rt.refreshing;
+
+    rt.refreshing = (async () => {
+      try {
+        await ensureLoaded(providerId);
+        if (!rt.client || !rt.catalog) return;
+        const mods = await loadVendorModules();
+        const cred = await mods.getCredentialFor(rt.region);
+        if (!cred) return; // 未登录：名册留静态兜底
+        const rawModels = await rt.client.fetchModels(cred, AbortSignal.timeout(CATALOG_FETCH_TIMEOUT_MS));
+        if (!Array.isArray(rawModels) || rawModels.length === 0) return; // 空名册不得覆盖可用名册
+        rt.catalog.set(rawModels);
+        registerProvider(rt);
+      } catch {
+        // 离线 / 超时 / 未登录：静默保留静态兜底名册
+      } finally {
+        rt.refreshing = undefined;
+      }
+    })();
+
+    return rt.refreshing;
   };
 
   // ── 启动路径：只做纯内存静态注册，零 I/O、零 jiti 编译 ──
@@ -295,7 +329,9 @@ export default async function (pi: ExtensionAPI) {
     const rt = runtimes.get(providerId)!;
     if (rt.shim) return; // 已就绪
     try {
+      // 只需本地 shim 就位就能发请求；名册刷新丢后台，不拖首轮响应
       await ensureLoaded(providerId);
+      void refreshCatalog(providerId);
     } catch {
       // 初始化失败时静默放行，让请求自然报错并保留重试机会
     }
