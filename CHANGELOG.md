@@ -4,6 +4,35 @@
 
 ---
 
+## [1.2.0] - 2026-11-03
+
+### 新增 (Added)
+- **`/workbuddy-refresh`：强制更新模型目录**。
+  - 背景：为了让 Pi 启动零阻塞，插件启动时只注册一份纯内存静态兜底名册，真实名册要等首次使用 provider 或用户打开 `/model` 选择器时才拉取。上游一旦改了目录，而用户又不打开选择器，就始终看不到新模型。
+  - 本命令显式重新执行一次上游 `fetchModels()`，写回 catalog 并立即重注册 provider（Pi 对扩展加载后的 `registerProvider` 调用即时生效），随后打印人工可读的**新增 / 移除差分**。
+  - 支持参数 `all`（默认）/ `cn` / `global`，带 Tab 补全；无参数时在交互模式下弹选择菜单。
+  - 三条安全约束：拉取失败时**保留原有名册**（绝不用空表覆盖）；以当前名册作为 `keepModelIds`，防止上游本次改动把用户正在使用的模型挤掉；`catalog.set()` 对空列表会抛错，因此坏响应不可能写坏状态。
+- **`/workbuddy-status` 增加签到状态行**：显示「今日已签到 / 未签到 + 连签天数」，并标注该区域是否存在签到活动。
+- **`/workbuddy-status` 增加积分明细**：除总额外，列出各积分包的 `剩余/总量`、周期包标记、到期/重置日期，以及「3 天内将过期」与「最近一笔过期时间」。
+- `scripts/gen-fallback.mjs`：从上游实测拉取名册并生成可粘进 `fallback-models.ts` 的数组，避免静态兜底名册靠手抄维护。
+- `scripts/smoke-test.mjs`：用 mock 的 Pi 宿主真实跑一遍扩展，验证命令注册、`/workbuddy-status` 与 `/workbuddy-refresh` 的端到端行为。
+
+### 修复 (Fixed)
+- **修复 `/workbuddy-status` 积分查询必然失败**（本次反馈的主问题）。
+  - 根因：代码调用了上游根本不存在的 `client.fetchCreditBalance()`（vendor 5.x 从 `b052baf` 到 `c08da1e` 全历史中都不存在该方法，`typeof` 实测为 `undefined`），调用必然抛 `TypeError`，而异常又被空 `catch` 吞掉，界面只剩下无从排查的「接口暂时不可达」。
+  - 修正：改用真实存在的 `fetchCredits()`（`POST /v2/billing/meter/get-user-resource`），并按它返回的 `{ total, packages, expiringSoon, nearestExpiryMs }` 结构渲染。
+- **修复错误信息被静默吞掉**：`/workbuddy-status` 现在把「本地回环代理初始化失败」「积分查询失败」「签到状态查询失败」分成三条独立路径，各自输出真实错误消息，不再伪装成「接口不可达」。
+- **修复积分小数尾数显示**：上游现金包带有浮点尾数（如 `2201.91000221`），统一收敛到 2 位小数并去掉无意义的尾随零。
+- **修复思考能力判定只看旧字段**：上游（vendor 5.x）用 `reasoning: { supportedEfforts, ... }` 对象表达思考能力，旧代码只认静态名册里的 `supportsReasoning` 布尔值，导致真实名册里的条目前者恒为 `true`。现两者都认。
+
+### 变更 (Changed)
+- **静态兜底名册重新采集（2026-11-03 实测）**：国内版 11 款 → **15 款**，国际版 20 款 → **21 款**。旧名册漂移严重，实测差分：
+  - 国内版新增 `hy4-preview`、`hy3-x`、`deepseek-v4.1-flash`、`glm-5.3-flash`、`space-bunny`、`minimax-m3.1-flash`、`kimi-k3.1-pro`、`kimi-k2.8-preview`、`step-5-preview`、`mimo-v2.6-pro`；移除 `glm-5v-turbo`、`glm-5.1`、`minimax-m3`、`kimi-k2.7`、`kimi-k2.6`。
+  - 国际版补入 `gpt-6-astra`、`gpt-6.1-sol`、`gpt-6-sol`、`gpt-6-luna`、`grok-4.7`、`gemini-3.8-flash`、`kimi-k3.1-pro`、`kimi-k3.1-pro-highspeed`、`minimax-m3.1-flash` 等。
+  - 倍率、上下文、`maxTokens`、图片输入能力全部按上游实测值重写。
+
+---
+
 ## [1.1.0] - 2026-10-28
 
 ### 性能 (Performance)

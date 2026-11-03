@@ -11,6 +11,11 @@
  *
  * 两个 region 的名册**不可混用**：国内版没有 gpt- / gemini- 前缀的条目，
  * 国际版的 auto 路由（default-model）必须缺席。
+ *
+ * 采集时间：2026-11-03，上游实测（`/workbuddy-refresh` 的同一个
+ * `fetchModels()` 通道）。上游目录平均两三周就会增删模型，请用
+ * `node scripts/gen-fallback.mjs` 重新生成本文件的这两个数组，
+ * 或按 `/workbuddy-refresh` 输出的差分校准，不要凭记忆手改。
  */
 
 export interface FallbackModel {
@@ -23,42 +28,48 @@ export interface FallbackModel {
   supportsReasoning?: boolean;
 }
 
-/** 国内版（codebuddy.cn CLI 通道，2026-08-30 采集） */
+/** 国内版（codebuddy.cn CLI 通道，2026-11-03 采集，15 款） */
 export const FALLBACK_MODELS_CN: readonly FallbackModel[] = [
-  { id: "hy3", name: "Hy3", contextWindow: 192_000, maxTokens: 64_000 },
-  { id: "glm-5v-turbo", name: "GLM-5v-Turbo", contextWindow: 200_000, maxTokens: 64_000 },
-  { id: "glm-5.3", name: "GLM-5.3", contextWindow: 1_000_000, maxTokens: 48_000 },
-  { id: "glm-5.2", name: "GLM-5.2", contextWindow: 1_000_000, maxTokens: 48_000 },
-  { id: "glm-5.1", name: "GLM-5.1", contextWindow: 200_000, maxTokens: 48_000 },
-  { id: "minimax-m3", name: "MiniMax-M3", contextWindow: 512_000, maxTokens: 128_000 },
-  { id: "kimi-k3-1", name: "Kimi-K3", contextWindow: 1_000_000, maxTokens: 32_000 },
-  { id: "kimi-k2.7", name: "Kimi-K2.7-Code", contextWindow: 256_000, maxTokens: 32_000 },
-  { id: "kimi-k2.6", name: "Kimi-K2.6", contextWindow: 256_000, maxTokens: 32_000 },
-  { id: "deepseek-v4-flash", name: "Deepseek-V4-Flash", contextWindow: 1_000_000, maxTokens: 50_000 },
-  { id: "deepseek-v4-pro", name: "Deepseek-V4-Pro", contextWindow: 1_000_000, maxTokens: 50_000 },
+  { id: "hy4-preview", name: "Hy4 preview", contextWindow: 960_000, maxTokens: 64_000, creditMultiplier: 0.29, supportsImages: true },
+  { id: "hy3", name: "Hy3", contextWindow: 192_000, maxTokens: 64_000, creditMultiplier: 0, supportsImages: true },
+  { id: "hy3-x", name: "Hy3", contextWindow: 192_000, maxTokens: 64_000, creditMultiplier: 0.05, supportsImages: true },
+  { id: "deepseek-v4.1-flash", name: "DeepSeek-V4.1-Flash", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 0.11, supportsImages: true },
+  { id: "glm-5.3", name: "GLM-5.3", contextWindow: 1_000_000, maxTokens: 64_000, creditMultiplier: 0.69, supportsImages: true },
+  { id: "glm-5.3-flash", name: "GLM-5.3-Flash", contextWindow: 1_000_000, maxTokens: 131_072, creditMultiplier: 0.08, supportsImages: true },
+  { id: "glm-5.2", name: "GLM-5.2", contextWindow: 1_000_000, maxTokens: 64_000, creditMultiplier: 0.79, supportsImages: true },
+  { id: "space-bunny", name: "Space-Bunny", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 0.08, supportsImages: true },
+  { id: "minimax-m3.1-flash", name: "MiniMax-M3.1-Flash", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 0.08, supportsImages: true },
+  { id: "kimi-k3.1-pro", name: "Kimi-K3.1-Pro", contextWindow: 1_000_000, maxTokens: 32_000, creditMultiplier: 0.97, supportsImages: true },
+  { id: "kimi-k3-1", name: "Kimi-K3", contextWindow: 1_000_000, maxTokens: 32_000, creditMultiplier: 1.62, supportsImages: true },
+  { id: "kimi-k2.8-preview", name: "Kimi-K2.8-Preview", contextWindow: 1_000_000, maxTokens: 64_000, creditMultiplier: 0.77, supportsImages: true },
+  { id: "deepseek-v4-pro", name: "DeepSeek-V4-Pro", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 0.51, supportsImages: true },
+  { id: "step-5-preview", name: "Step-5-Preview", contextWindow: 1_000_000, maxTokens: 64_000, creditMultiplier: 0.33, supportsImages: true },
+  { id: "mimo-v2.6-pro", name: "Xiaomi MiMo-V2.6-Pro", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 0.13, supportsImages: true },
 ];
 
-/** 国际版（workbuddy.ai/v3/config 桌面通道，2026-09-11 采集） */
+/** 国际版（workbuddy.ai/v3/config 桌面通道，2026-11-03 采集，21 款） */
 export const FALLBACK_MODELS_GLOBAL: readonly FallbackModel[] = [
-  { id: "fast-model", name: "Fast", contextWindow: 200_000, maxTokens: 32_000, creditMultiplier: 0.34 },
-  { id: "balanced-model", name: "Balanced", contextWindow: 256_000, maxTokens: 32_000, creditMultiplier: 0.59 },
-  { id: "primary-model", name: "Primary", contextWindow: 272_000, maxTokens: 72_000, creditMultiplier: 3.31 },
-  { id: "deep-model", name: "Deep", contextWindow: 176_000, maxTokens: 24_000, creditMultiplier: 3.33 },
-  { id: "deepseek-v4.1-flash", name: "Deepseek-V4.1-Flash", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 0 },
-  { id: "gpt-6-astra", name: "GPT-6-Astra", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 6.67 },
-  { id: "hy4-preview", name: "Hy4 preview", contextWindow: 1_000_000, maxTokens: 64_000, creditMultiplier: 0 },
-  { id: "hy3", name: "Hy3", contextWindow: 192_000, maxTokens: 64_000, creditMultiplier: 0 },
-  { id: "gpt-5.6-sol", name: "GPT-5.6-Sol", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 3.47 },
-  { id: "gpt-5.6-terra", name: "GPT-5.6-Terra", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 1.39 },
-  { id: "gpt-5.6-luna", name: "GPT-5.6-Luna", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 0.14 },
-  { id: "gpt-5.5", name: "GPT-5.5", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 3.31 },
-  { id: "gpt-5.4", name: "GPT-5.4", contextWindow: 272_000, maxTokens: 72_000, creditMultiplier: 1.65 },
-  { id: "gpt-5.3-codex", name: "GPT-5.3-Codex", contextWindow: 272_000, maxTokens: 72_000, creditMultiplier: 1.25 },
-  { id: "gemini-3.5-flash", name: "Gemini-3.5-Flash", contextWindow: 1_000_000, maxTokens: 65_536, creditMultiplier: 0.99 },
-  { id: "glm-5.3", name: "GLM-5.3", contextWindow: 1_000_000, maxTokens: 48_000, creditMultiplier: 0.79 },
-  { id: "glm-5.2", name: "GLM-5.2", contextWindow: 1_000_000, maxTokens: 48_000, creditMultiplier: 0.79 },
-  { id: "kimi-k3", name: "Kimi-K3", contextWindow: 1_000_000, maxTokens: 32_000, creditMultiplier: 1.62 },
-  { id: "kimi-k2.6", name: "Kimi-K2.6", contextWindow: 256_000, maxTokens: 32_000, creditMultiplier: 0.52 },
+  { id: "fast-model", name: "Fast", contextWindow: 200_000, maxTokens: 32_000, creditMultiplier: 0.34, supportsImages: true },
+  { id: "balanced-model", name: "Balanced", contextWindow: 256_000, maxTokens: 32_000, creditMultiplier: 0.59, supportsImages: true },
+  { id: "primary-model", name: "Primary", contextWindow: 272_000, maxTokens: 72_000, creditMultiplier: 3.31, supportsImages: true },
+  { id: "hy4-preview", name: "Hy4 Preview", contextWindow: 1_000_000, maxTokens: 64_000, creditMultiplier: 0.29, supportsImages: true },
+  { id: "hy3", name: "Hy3", contextWindow: 192_000, maxTokens: 64_000, creditMultiplier: 0, supportsImages: true },
+  { id: "deepseek-v4.1-flash-sg", name: "Deepseek-V4.1-Flash", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 0.11, supportsImages: true },
+  { id: "gpt-6-astra", name: "GPT-6-Astra", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 6.67, supportsImages: true },
+  { id: "gpt-6.1-sol", name: "GPT-6.1-Sol", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 1.33, supportsImages: true },
+  { id: "gpt-6-sol", name: "GPT-6-Sol", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 1.33, supportsImages: true },
+  { id: "gpt-6-luna", name: "GPT-6-Luna", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 0.07, supportsImages: true },
+  { id: "gpt-5.6-sol", name: "GPT-5.6-Sol", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 3.47, supportsImages: true },
+  { id: "gpt-5.6-terra", name: "GPT-5.6-Terra", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 1.39, supportsImages: true },
+  { id: "gpt-5.6-luna", name: "GPT-5.6-Luna", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 0.14, supportsImages: true },
+  { id: "grok-4.7", name: "Grok-4.7", contextWindow: 500_000, maxTokens: 128_000, creditMultiplier: 1.9, supportsImages: true },
+  { id: "gemini-3.8-flash", name: "Gemini-3.8-Flash", contextWindow: 1_000_000, maxTokens: 65_536, creditMultiplier: 0.95, supportsImages: true },
+  { id: "glm-5.3", name: "GLM-5.3", contextWindow: 1_000_000, maxTokens: 48_000, creditMultiplier: 0.69, supportsImages: true },
+  { id: "glm-5.3-flash", name: "GLM-5.3-Flash", contextWindow: 1_000_000, maxTokens: 32_000, creditMultiplier: 0.08, supportsImages: true },
+  { id: "kimi-k3.1-pro", name: "Kimi-K3.1-Pro", contextWindow: 1_000_000, maxTokens: 32_000, creditMultiplier: 0.97, supportsImages: true },
+  { id: "kimi-k3.1-pro-highspeed", name: "Kimi-K3.1-Pro-Highspeed", contextWindow: 1_000_000, maxTokens: 32_000, creditMultiplier: 1.56, supportsImages: true },
+  { id: "kimi-k3", name: "Kimi-K3", contextWindow: 1_000_000, maxTokens: 32_000, creditMultiplier: 1.62, supportsImages: true },
+  { id: "minimax-m3.1-flash", name: "MiniMax-M3.1-Flash", contextWindow: 1_000_000, maxTokens: 128_000, creditMultiplier: 0.08, supportsImages: true },
 ];
 
 export function fallbackModelsFor(region: "cn" | "global"): readonly FallbackModel[] {

@@ -83,9 +83,14 @@ ln -sf ~/Documents/pi-workbuddy/index.ts ~/.pi/agent/extensions/workbuddy.ts
 | `/workbuddy-login global` | 启动 **WorkBuddy AI (国际版)** 网页登录授权流程（支持 Tab 自动补全） |
 | `/workbuddy-login cn` | 启动 **WorkBuddy (国内版)** 扫码登录流程 |
 | `/login workbuddy-global` | 通过 Pi 原生交互对话框登录国际版 |
-| `/workbuddy-status` | 查看当前已登录账号（UID、昵称、域名、Token 到期时间）及积分余额 |
+| `/workbuddy-status` | 查看当前已登录账号（UID、昵称、域名、Token 到期时间）、积分余额明细与今日签到状态 |
+| `/workbuddy-refresh` | **强制向上游重新拉取模型目录**并立即生效，打印新增/移除差分（支持 Tab 补全 `all` / `cn` / `global`） |
 | `/workbuddy-checkin` | 执行国内版每日签到，自动领取免费积分与权益 |
 | `/workbuddy-update` | 会话内一键同步 GitHub 最新上游协议更新并报告当前 Commit 详情 |
+
+> 上游改了模型目录、而 `/model` 里迟迟看不到新模型时，用 `/workbuddy-refresh`。
+> 插件启动时只注册一份零 I/O 的静态兜底名册（避免 jiti 编译拖慢启动），
+> 真实名册要等首次使用 provider 或打开 `/model` 时才拉取；这个命令就是手动催它一下。
 
 ---
 
@@ -98,6 +103,17 @@ ln -sf ~/Documents/pi-workbuddy/index.ts ~/.pi/agent/extensions/workbuddy.ts
   ```bash
   ~/.pi/agent/extensions/pi-workbuddy/update.sh
   ```
+
+### 开发期脚本
+
+```bash
+# 从上游拉取实测名册，生成可粘进 fallback-models.ts 的数组
+node scripts/gen-fallback.mjs
+
+# 用 mock 的 Pi 宿主跑一遍扩展：验证命令注册、/workbuddy-status、/workbuddy-refresh
+node scripts/smoke-test.mjs status
+node scripts/smoke-test.mjs refresh cn
+```
 
 ---
 
